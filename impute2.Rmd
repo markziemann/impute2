@@ -280,7 +280,7 @@ ores <- lapply(cordatalist, function(x) {
 ```{bash,collateresult}
 
 head -1 oradata.tsv.a > impute_res.tsv
-grep -vr 'names.ores..i.' oradata.tsv.* >> impute_res.tsv
+grep -v 'names.ores..i.' oradata.tsv.* | cut -d ':' -f2- >> impute_res.tsv
 
 ```
 
