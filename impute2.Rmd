@@ -1,0 +1,326 @@
+---
+title: "DEE2 data prep"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 7
+    fig_height: 7
+theme: cosmo
+---
+
+Source: https://github.com/markziemann/impute2/
+
+## Introduction
+
+```{r,packages}
+
+suppressPackageStartupMessages({
+  library("tictoc")
+  library("parallel")
+  library("vioplot")
+  library("fgsea")
+
+  library("reshape2")
+  library("eulerr")
+  library("HGNChelper")
+  library("kableExtra")
+  library("beeswarm")
+  library("gplots")
+  library("gridExtra")
+  library("png")
+  library("parallel")
+  library("RhpcBLASctl")
+  library("tictoc")
+  library("vioplot")
+})
+
+```
+
+Read in the QC data so that we can find the PASS datasets.
+
+```{r,readqc}
+
+download.file("https://dee2.io/mx/hsapiens_qc.tsv.bz2",destfile="hsapiens_qc.tsv.bz2")
+q <- read.table("hsapiens_qc.tsv.bz2",sep="\t")
+pass <- unique(subset(q,V3=="PASS"))
+srr <- pass$V1
+length(srr)
+sname <- paste("/mnt/md0/dee2/data/hsapiens/",srr,"/",srr,".se.tsv.gz",sep="");
+writeLines(sname,con="sname.txt")
+
+```
+
+Retabulate the individual STAR expression counts file into a transposed matrix.
+Do RPM based normalisation.
+We use this approach because reformatting the 3 column bz file requires >700 GB of memory,
+which leaves none for downstream correlation analysis.
+
+Takes 81m. File size: 16 GB, when gz compressed: 5.0 GB . Data rows: 113,332.
+
+```{bash,retabulate}
+
+MYSNAME=$(head -1 sname.txt)
+zcat $MYSNAME | cut -f1 | paste -s -d '\t' | sed 's/DRR000177//' > colnames.tsv
+
+retab() {
+N=$1
+SUM=$(zcat $N | cut -f2 | numsum)
+SRR=$(echo $N | cut -d '/' -f7 )
+
+zcat $N \
+  | cut -f2 \
+  | sed 1d \
+  | awk -v S=$SUM '{print 1000000*$1/S}' \
+  | paste -s -d '\t' \
+  | sed "s/^/${SRR}\t/"
+
+}
+export -f retab
+
+cat colnames.tsv > dat.tsv
+parallel -j16 retab :::: sname.txt >> dat.tsv
+
+```
+
+Split into chunks. 1m26s.
+
+```{bash,corr1}
+
+cut -f1 dat.tsv > rownames.txt &
+cut -f1-3645 dat.tsv > dat.tsv.a &
+wait
+cut -f3646-7289 dat.tsv | paste rownames.txt - > dat.tsv.b &
+cut -f7290-10933 dat.tsv | paste rownames.txt - > dat.tsv.c &
+cut -f10934-14577 dat.tsv | paste rownames.txt - > dat.tsv.d &
+cut -f14578-18221 dat.tsv | paste rownames.txt - > dat.tsv.e &
+cut -f18222-21865 dat.tsv | paste rownames.txt - > dat.tsv.f &
+cut -f21866-25509 dat.tsv | paste rownames.txt - > dat.tsv.g &
+cut -f25510-29153 dat.tsv | paste rownames.txt - > dat.tsv.h &
+cut -f29154-32797 dat.tsv | paste rownames.txt - > dat.tsv.i &
+cut -f32798-36441 dat.tsv | paste rownames.txt - > dat.tsv.j &
+cut -f36442-40085 dat.tsv | paste rownames.txt - > dat.tsv.k &
+cut -f40086-43729 dat.tsv | paste rownames.txt - > dat.tsv.l &
+cut -f43730-47373 dat.tsv | paste rownames.txt - > dat.tsv.m &
+cut -f47374-51017 dat.tsv | paste rownames.txt - > dat.tsv.n &
+cut -f51018-54661 dat.tsv | paste rownames.txt - > dat.tsv.o &
+cut -f54662-58305 dat.tsv | paste rownames.txt - > dat.tsv.p &
+wait
+
+```
+
+Single file correlations.
+
+Then multifile.
+
+```{r,correlation1}
+
+library("parallel")
+flist <- list.files(".",pattern="dat.tsv.")
+null <- mclapply(flist,function(f) {
+  dat <- read.table(f,header=TRUE,row.names=1)
+  outfile <- gsub("dat","cor",f)
+  mycor <- cor(dat) #20 mins 10 GB RAM
+  write.table(x=format(mycor,digits=5), file=outfile,sep="\t")
+  return(0)
+},mc.cores=16)
+
+flist <- list.files(".",pattern="dat.tsv.")
+fcomb <- expand.grid(flist,flist)
+fcomb <- subset(fcomb,Var1!=Var2)
+fcomb <- t(apply(fcomb,1,function(x) { x[order(x)] } ))
+fcomb <- unique(fcomb)
+length(fcomb)
+
+null <- mclapply(1:nrow(fcomb), function(i) {
+  aname <- as.character(fcomb[i,1])
+  bname <- as.character(fcomb[i,2])
+  altr <- sapply(strsplit(aname,"\\."),"[[",3)
+  bltr <- sapply(strsplit(bname,"\\."),"[[",3)
+  outname <- paste("cor.tsv.",altr,bltr,sep="")
+  a <- read.table(aname,header=TRUE,row.names=1)
+  b <- read.table(bname,header=TRUE,row.names=1)
+  abcor <- cor(a,b) #XX miins 20 GB RAM
+  write.table(x=format(abcor,digits=5), file=outname,sep="\t")
+  return(0)
+},mc.cores=20)
+
+```
+
+```{bash,realign_headers}
+
+for COR in cor.tsv* ; do
+  sed -i '1s/^/\t/' $COR
+done
+
+```
+
+Reassemble the data.
+
+```{r,cor}
+
+myfiles <- list.files(".",pattern="cor.tsv")
+
+ltrs <- letters[1:16]
+null <- mclapply(ltrs, function(ltr) {
+  argx <- paste("tsv.",ltr,sep="")
+  afiles <- myfiles[grep(argx,myfiles)]
+  brgx <- paste(ltr,"$",sep="")
+  bfiles <- myfiles[grep(brgx,myfiles)]
+  bfiles <- setdiff(bfiles,afiles)
+  adata <- mclapply(afiles,function(x) { read.table(x) }, mc.cores=1)
+  adata <- do.call(cbind, adata)
+  bdata <- mclapply(bfiles,function(x) { read.table(x) }, mc.cores=1)
+  bdata <- do.call(rbind, bdata)
+  cordata <- rbind(t(adata),bdata)
+  cordata <- cordata[order(rownames(cordata)),]
+  cordata <- cordata[,order(colnames(cordata))]
+  outfile <- paste("cordata.tsv.",ltr,sep="")
+  write.table(x=cordata,file=outfile,sep="\t")
+  return(0)
+}, mc.cores=16)
+
+```
+
+Thresholding.
+
+```{r,thresholding}
+
+library("vioplot")
+cordata <- read.table("cordata.tsv.a",header=TRUE)
+rn <- row.names(cordata)
+cordata <- apply(cordata,2,as.numeric)
+rownames(cordata) <- rn
+cordata[cordata == 1] <- NA
+par(mar= c(10.1, 4.1, 4.1, 2.1) )
+vioplot(cordata[,1:20],las=2,main="Correlation coefficients")
+par(mar= c(5.1, 4.1, 4.1, 2.1) )
+
+```
+
+
+```{r,genenames}
+
+library("fgsea")
+
+gs <- gmtPathways("c5.go.v2024.1.Hs.symbols.gmt")
+gs <- gs[grep("^GOBP",names(gs))] #GO BP only
+
+#download.file("https://ziemann-lab.net/public/tmp/ensg.tsv",destfile="ensg.tsv")
+ensg2hgnc <- read.table("ensg.tsv",header=TRUE)
+
+#ensg <- rownames(cordata)
+#library(biomaRt)
+#ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+#searchAttributes(mart = ensembl, pattern = "hgnc")
+#head(searchAttributes(mart = ensembl, pattern = "stable"))
+#head(ensg)
+#length(ensg)
+#bm <- getBM(attributes = c('ensembl_gene_id', 'hgnc_symbol'),
+#      values = ensg, mart = ensembl)
+#write.table(bm,"ensg.tsv",sep="\t",row.names=FALSE)
+
+
+#cordata <- read.table("cordata.tsv.a")
+
+myora <- function(cordata,ensg2hgnc,gs) {
+  cm <- merge(ensg2hgnc,cordata,by.x="ensembl_gene_id",by.y=0)
+  ores <- mclapply(1:ncol(cordata), function(i) {
+    geneid <- colnames(cordata)[i]
+    geneid <- paste((ensg2hgnc[grep(geneid,ensg2hgnc$ensembl_gene_id),]),collapse=" ")
+    g <- cordata[,i]
+    names(g) <- cm[,2]
+    g <- g[which(!is.na(g))]
+    g <- g[!is.na(names(g))]
+    g <- g[which(names(g)!="")]
+    g[which(duplicated(names(g)))]
+    fg <- unique(names(g[which(g>0.4)]))
+    if ( length(fg) > 50 ) {
+      bg <- unique(names(g))
+      ores <- fora(pathways=gs,genes=fg,universe=bg,minSize=2,maxSize=500)
+      ores$FES <- (ores$overlap / ores$size ) / ( length(fg) / length(bg) )
+      ores <- ores[order(-ores$FES),]
+      ores <- subset(ores,padj<0.01 & FES > 2 )
+    } else {
+      ores <- 0
+    }
+    return(ores)
+  },mc.cores=1)
+  onames <- lapply(1:ncol(cordata), function(i) {
+    geneid <- colnames(cordata)[i]
+    geneid <- paste((ensg2hgnc[grep(geneid,ensg2hgnc$ensembl_gene_id),]),collapse=" ")
+    geneid
+  })
+  names(ores) <- onames
+  ores <- ores[which(unlist(lapply(ores,object.size) ) > 2296)]
+  dfres <- lapply(1:length(ores), function(i) { data.frame( names(ores)[i], ores[[i]] ) } )
+  dfres <- do.call(rbind,dfres)
+  dfres$overlapGenes <- unlist(lapply(dfres$overlapGenes, function(x) {
+    paste(x,collapse="," )
+  } ) )
+  return(dfres)
+}
+
+
+cordatalist <- list.files(".",pattern="^cordata.tsv.")
+
+ores <- lapply(cordatalist, function(x) {
+  outfile=gsub("cordata","oradata",x)
+  cordata <- read.table(x,header=TRUE)
+  rn <- row.names(cordata)
+  cordata <- apply(cordata,2,as.numeric)
+  rownames(cordata) <- rn
+  oradat <- myora(cordata=cordata,ensg2hgnc,gs)
+  write.table(x=oradat,file=outfile,sep="\t",quote=FALSE,row.names=FALSE)
+})
+
+```
+
+```{bash,collateresult}
+
+head -1 oradata.tsv.a > impute_res.tsv
+(base) mdz@mdz-office:~/projects/impute2$ grep -v 'names.ores..i.' oradata.tsv.* >> impute_res.tsv
+
+```
+
+
+```{r,data}
+
+linc <- ores[grep("LINC",names(ores))]
+linc <- linc[which(sapply(linc,nrow)>1)]
+lincnames <- names(which(unlist(lapply(linc,nrow))>0))
+linc <- linc[which(names(linc) %in% lincnames)]
+
+names(linc)[1]
+head(linc[[1]],10)
+
+names(linc)[2]
+head(linc[[2]],10)
+
+names(linc)[3]
+head(linc[[3]],10)
+
+names(linc)[4]
+head(linc[[4]],10)
+
+names(linc)[5]
+head(linc[[5]],10)
+
+
+
+ores <- ores[which(unlist(lapply(ores,object.size) ) > 2296)]
+
+ores[grep("ENSG00000284642",names(ores))]
+
+unlist(lapply(ores,nrow))
+
+```
+
+ENSG00000081721 DUSP12 glucokinase regulation confirmed.
+
+ENSG00000117091 CD48 GOBP_B_CELL_RECEPTOR confirmed
+
+ENSG00000118733 OLFM3 GOBP_POSITIVE_REGULATION_OF_NEUROTRANSMITTER_SECRETION
+
+
