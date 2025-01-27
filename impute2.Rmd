@@ -206,8 +206,8 @@ library("fgsea")
 
 #gs <- gmtPathways("c5.go.v2024.1.Hs.symbols.gmt")
 #gs <- gs[grep("^GOBP",names(gs))] #GO BP only
-
-gs <- gmtPathways("c5.hpo.v2024.1.Hs.symbols.gmt")
+#gs <- gmtPathways("c5.hpo.v2024.1.Hs.symbols.gmt")
+gs <- gmtPathways("msigdb.v2024.1.Hs.symbols.gmt")
 
 #download.file("https://ziemann-lab.net/public/tmp/ensg.tsv",destfile="ensg.tsv")
 ensg2hgnc <- read.table("ensg.tsv",header=TRUE)
@@ -236,10 +236,9 @@ myora <- function(cordata,ensg2hgnc,gs) {
     g <- g[which(!is.na(g))]
     g <- g[!is.na(names(g))]
     g <- g[which(names(g)!="")]
-    g <- g[g == 1] <- 0
-    g <- scale(g)
-    g[which(duplicated(names(g)))]
-    fg <- unique(names(g[which(g>0.4)]))
+    g[g == 1] <- 0
+    names(g) <- gn
+    fg <- unique(names(g[which(g>0.3)]))
     if ( length(fg) > 50 ) {
       bg <- unique(names(g))
       ores <- fora(pathways=gs,genes=fg,universe=bg,minSize=2,maxSize=500)
@@ -286,6 +285,142 @@ ores <- lapply(cordatalist, function(x) {
 head -1 oradata.tsv.a > impute_res.tsv
 grep -v 'names.ores..i.' oradata.tsv.* | cut -d ':' -f2- \
 | sed 's/ /_/' | sort -k8gr | sort -k2 >> impute_res.tsv
+
+```
+
+
+
+```{r,fcs}
+
+myfcs <- function(cordata,ensg2hgnc,gs) {
+  cm <- merge(ensg2hgnc,cordata,by.x="ensembl_gene_id",by.y=0)
+  fres <- mclapply(1:ncol(cordata), function(i) {
+    geneid <- colnames(cordata)[i]
+    geneid <- paste((ensg2hgnc[grep(geneid,ensg2hgnc$ensembl_gene_id),]),collapse=" ")
+    g <- cordata[,i]
+    names(g) <- cm[,2]
+    g <- g[which(!is.na(g))]
+    g <- g[!is.na(names(g))]
+    g <- g[which(names(g)!="")]
+    g[g == 1] <- 0
+    gn <- names(g)
+    g <- as.vector(scale(g))
+    names(g) <- gn
+    fres <- fgsea(pathways=gs,stats=g,minSize=3)
+    fres <- fres[order(-abs(fres$ES)),]
+    fres <- subset(fres,padj<0.01 & ES > 0.4 )
+    return(fres)
+  },mc.cores=1)
+  fnames <- lapply(1:ncol(cordata), function(i) {
+    geneid <- colnames(cordata)[i]
+    geneid <- paste((ensg2hgnc[grep(geneid,ensg2hgnc$ensembl_gene_id),]),collapse=" ")
+    geneid
+  })
+  names(fres) <- fnames
+  fres <- fres[unlist(lapply(fres,function(x) { nrow(x) > 0 } ) )]
+  dfres <- lapply(1:length(fres), function(i) { data.frame( names(fres)[i], fres[[i]] ) } )
+  dfres <- do.call(rbind,dfres)
+  dfres$overlapGenes <- unlist(lapply(dfres$overlapGenes, function(x) {
+    paste(x,collapse="," )
+  } ) )
+  return(dfres)
+}
+
+cordatalist <- list.files(".",pattern="^cordata.tsv.")
+
+fres <- lapply(cordatalist[1], function(x) {
+  outfile=gsub("cordata","fcsdata",x)
+  #x="tmpcordata.tsv.a"
+  cordata <- read.table(x,header=TRUE)
+  cordata <- cordata[,1:100]
+  rn <- row.names(cordata)
+  cordata <- apply(cordata,2,as.numeric)
+  rownames(cordata) <- rn
+  fcsdat <- myfcs2(cordata=cordata,ensg2hgnc,gs)
+  write.table(x=fcsdat,file=outfile,sep="\t",quote=FALSE,row.names=FALSE)
+})
+
+
+```
+
+
+```{r,fcs2}
+
+anofcs <- function(g,gs,minSize=5,threads=1) {
+  anores <- mclapply(1:length(gs),function(i) {
+    g <- g[order(-g)]
+    myset <- gs[[i]]
+    mysetname <- names(gs)[i]
+    inset <- g[which(names(g) %in% myset)]
+    insetlen <- length(inset)
+    if ( insetlen >= minSize ) {
+      notinset <- g[which(! names(g) %in% myset)]
+      tres <- t.test(inset,notinset)
+      la <- names(inset[which(inset > mean(inset))])
+      if (length(la)>20) { la <- la[1:20] }
+      la <- paste(la,collapse=",")
+      result <- c("setName"=mysetname, "no. members"=insetlen, "mean"=mean(inset),"pval"=tres$p.val , "leadingEdge"=la)
+      return(result)
+    }
+  } , mc.cores=threads )
+  anores2 <- do.call(rbind,anores)
+  la <- anores2[,"leadingEdge"]
+  rownames(anores2) <- anores2[,1]
+  anores2 <- t(apply(anores2[,2:4],1,as.numeric))
+  colnames(anores2) <- c("no. members","mean","pval")
+  anores2 <- as.data.frame(anores2)
+  anores2$fdr <- p.adjust(anores2$pval,method="fdr")
+  anores2$leadingEdge <- la
+  return(anores2)
+}
+
+myfcs2 <- function(cordata,ensg2hgnc,gs) {
+  cm <- merge(ensg2hgnc,cordata,by.x="ensembl_gene_id",by.y=0)
+  fres <- mclapply(1:ncol(cordata), function(i) {
+    geneid <- colnames(cordata)[i]
+    geneid <- paste((ensg2hgnc[grep(geneid,ensg2hgnc$ensembl_gene_id),]),collapse=" ")
+    g <- cordata[,i]
+    names(g) <- cm[,2]
+    g <- g[which(!is.na(g))]
+    g <- g[!is.na(names(g))]
+    g <- g[which(names(g)!="")]
+    g[g == 1] <- 0
+    gn <- names(g)
+    g <- as.vector(scale(g))
+    names(g) <- gn
+    ares <- anofcs(g,gs,minSize=5,threads=8)
+    ares <- subset(ares,fdr<0.01 & mean > 0.3 )
+    ares <- ares[order(-ares$mean),]
+    return(ares)
+  },mc.cores=1)
+  fnames <- lapply(1:ncol(cordata), function(i) {
+    geneid <- colnames(cordata)[i]
+    geneid <- paste((ensg2hgnc[grep(geneid,ensg2hgnc$ensembl_gene_id),]),collapse=" ")
+    geneid
+  })
+  names(fres) <- fnames
+  fres <- fres[unlist(lapply(fres,function(x) { nrow(x) > 0 } ) )]
+  dfres <- lapply(1:length(fres), function(i) { data.frame( names(fres)[i], fres[[i]] ) } )
+  dfres <- do.call(rbind,dfres)
+  dfres$overlapGenes <- unlist(lapply(dfres$overlapGenes, function(x) {
+    paste(x,collapse="," )
+  } ) )
+  return(dfres)
+}
+
+tic()
+fres <- lapply(cordatalist, function(x) {
+  outfile=gsub("cordata","fcsdata",x)
+  cordata <- read.table(x,header=TRUE)
+  #cordata <- cordata[,1:10]
+  rn <- row.names(cordata)
+  cordata <- apply(cordata,2,as.numeric)
+  rownames(cordata) <- rn
+  fcsdat <- myfcs2(cordata=cordata,ensg2hgnc,gs)
+  write.table(x=fcsdat,file=outfile,sep="\t",quote=FALSE,row.names=TRUE)
+})
+toc()
+
 ```
 
 
