@@ -204,8 +204,10 @@ par(mar= c(5.1, 4.1, 4.1, 2.1) )
 
 library("fgsea")
 
-gs <- gmtPathways("c5.go.v2024.1.Hs.symbols.gmt")
-gs <- gs[grep("^GOBP",names(gs))] #GO BP only
+#gs <- gmtPathways("c5.go.v2024.1.Hs.symbols.gmt")
+#gs <- gs[grep("^GOBP",names(gs))] #GO BP only
+
+gs <- gmtPathways("c5.hpo.v2024.1.Hs.symbols.gmt")
 
 #download.file("https://ziemann-lab.net/public/tmp/ensg.tsv",destfile="ensg.tsv")
 ensg2hgnc <- read.table("ensg.tsv",header=TRUE)
@@ -234,6 +236,8 @@ myora <- function(cordata,ensg2hgnc,gs) {
     g <- g[which(!is.na(g))]
     g <- g[!is.na(names(g))]
     g <- g[which(names(g)!="")]
+    g <- g[g == 1] <- 0
+    g <- scale(g)
     g[which(duplicated(names(g)))]
     fg <- unique(names(g[which(g>0.4)]))
     if ( length(fg) > 50 ) {
@@ -280,8 +284,8 @@ ores <- lapply(cordatalist, function(x) {
 ```{bash,collateresult}
 
 head -1 oradata.tsv.a > impute_res.tsv
-grep -v 'names.ores..i.' oradata.tsv.* | cut -d ':' -f2- >> impute_res.tsv
-
+grep -v 'names.ores..i.' oradata.tsv.* | cut -d ':' -f2- \
+| sed 's/ /_/' | sort -k8gr | sort -k2 >> impute_res.tsv
 ```
 
 
