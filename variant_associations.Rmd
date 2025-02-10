@@ -1,0 +1,264 @@
+---
+title: "Variant associations"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 5
+    fig_height: 5
+theme: cosmo
+---
+
+Source: https://github.com/markziemann/impute2/
+
+## Introduction
+
+Here the idea is to examine the variant assumptions.
+To quantify the number that are intergenic or not assigned to known protein coding genes.
+
+```{r,packages}
+
+suppressPackageStartupMessages({
+  library("tictoc")
+  library("parallel")
+  library("vioplot")
+  library("fgsea")
+
+  library("reshape2")
+  library("eulerr")
+  library("HGNChelper")
+  library("kableExtra")
+  library("beeswarm")
+  library("gplots")
+  library("gridExtra")
+  library("png")
+  library("parallel")
+  library("RhpcBLASctl")
+  library("tictoc")
+  library("vioplot")
+})
+
+```
+
+Read in data:
+
+* Ensembl gene GTF/gene with biotypes
+
+* Ontologies
+
+* GWASdb: a database for human genetic variants identified by genome-wide association studies.
+
+```{r,dl_data}
+
+#URL: https://www.ebi.ac.uk/gwas/api/search/downloads/full
+gwas <- read.table("gwas_catalog_v1.0-associations_e113_r2025-01-30.tsv",sep="\t",header=TRUE,fill=NA,
+row.names=NULL,quote="")
+
+gs <- fgsea::gmtPathways("msigdb.v2024.1.Hs.symbols.gmt")
+
+```
+
+## Variant type
+
+```{r,vartype}
+
+context <- gwas$CONTEXT
+contextcnt <- sort(table(gsub(" ","",unlist(strsplit(context,";")))))
+contextcnt
+
+contextcnt/sum(contextcnt) * 100
+
+OTHER=sum(contextcnt[1:(length(contextcnt)-11)])
+contextcnt2 <- tail(contextcnt,10)
+contextcnt2 <- c("other"=OTHER, tail(contextcnt,10) )
+
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(tail(contextcnt,10),horiz=TRUE,las=1, xlab="no. variants")
+mtext("GWAS Catalog variant context")
+
+barplot(contextcnt2/1000,horiz=TRUE,las=1,xlab="no. variants (thousands)")
+mtext("GWAS Catalog variant context")
+
+```
+
+## Annotated gene info
+
+```{r,gene_info1}
+
+x <- readLines("gene_biotype.tsv")
+x <- strsplit(x,"\t")
+
+# munge
+y <- lapply(x,function(y) {
+  if ( length(y) == 2 ) {
+    OUT=c(y[1],y[1],y[2])
+  } else {
+    OUT=y
+  }
+  return( OUT )
+})
+
+z <- as.data.frame(do.call(rbind,y))
+z$V3 <- gsub("_"," ",z$V3)
+
+head(z)
+
+```
+
+## Analyse
+
+```{r,analyse1}
+
+gwas2 <- subset(gwas,SNP_GENE_IDS!="")
+
+mygenes <- gsub(" ","",unlist(strsplit(gwas2$SNP_GENE_IDS,",")))
+
+mygenes <- as.data.frame( mygenes)
+colnames(mygenes) = "gene"
+
+mybt <- merge(mygenes,z,by.x="gene",by.y="V1",all.x=TRUE)
+
+gwas_bt <- sort(table(mybt$V3))
+
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(gwas_bt,horiz=TRUE,las=1, xlab="no. associations")
+mtext("GWAS Catalog gene annotation")
+
+OTHER <- sum(gwas_bt[1:(length(gwas_bt)-2)])
+gwas_bt2 <- c("other"=OTHER,gwas_bt[(length(gwas_bt)-1):length(gwas_bt)])
+par(mar=c(5.1, 10.1, 4.1, 2.1) )
+barplot(gwas_bt2/1000,horiz=TRUE,las=1,main="GWAS Catalog gene annotation", xlab="no. associations (thousands)")
+
+```
+
+## GO BP analysis
+
+See what fraction of GWAS genes have gene ontologies (biological process).
+
+66% of GWAS genes have a biological process (13599 / ( 13599 + 6988 )= 0.66 ).
+We can help with identifying the other ones.
+
+```{r,gwas_go1}
+
+gobp <- gs[grep("^GOBP",names(gs))]
+
+gobp_genes <- unique(unlist(gobp))
+length(gobp_genes)
+
+mygenes <- gsub(" ","",unlist(strsplit(gwas2$SNP_GENE_IDS,",")))
+mygenes <- unique(z[which(z$V1 %in% mygenes),2])
+
+table(mygenes %in% gobp_genes)
+
+```
+
+Learning about the GWAS genes with and without GO annotations.
+
+```{r,gwas_go2}
+
+mygenes_ingo <- mygenes[which(mygenes %in% gobp_genes)]
+
+mygenes_nogo <- mygenes[which(! mygenes %in% gobp_genes)]
+
+mygenes_nogo_bt <- sort(table(z[which(z$V2 %in% mygenes_nogo),"V3"]))
+
+mygenes_nogo_bt
+sum(mygenes_nogo_bt)
+
+OTHER=sum(mygenes_nogo_bt[1:(length(mygenes_nogo_bt)-10)])
+
+mygenes_nogo_bt2 <- c("other"=OTHER,tail(mygenes_nogo_bt,10))
+
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(tail(mygenes_nogo_bt,10),horiz=TRUE,las=1,xlab="no. genes")
+mtext("Biotypes of GWAS genes without GO BP annotations")
+grid()
+barplot(mygenes_nogo_bt2,horiz=TRUE,las=1,xlab="no. genes",xlim=c(0,4000))
+mtext("Biotypes of GWAS genes without GO BP annotations")
+grid()
+
+pdf("variant_annotation_barplot1.pdf")
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(mygenes_nogo_bt2,horiz=TRUE,las=1,xlab="no. genes",xlim=c(0,4000))
+mtext("Biotypes of GWAS genes without GO BP annotations")
+grid()
+dev.off()
+
+mygenes_nogo_bt2/sum(mygenes_nogo_bt) *100
+
+# NOW IN GO
+mygenes_ingo_bt <- sort(table(z[which(z$V2 %in% mygenes_ingo),"V3"]))
+mygenes_ingo_bt
+sum(mygenes_ingo_bt)
+
+OTHER=sum(mygenes_ingo_bt[1:(length(mygenes_ingo_bt)-10)])
+mygenes_ingo_bt2 <- c("other"=OTHER,tail(mygenes_ingo_bt,10))
+
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(tail(mygenes_ingo_bt,10),horiz=TRUE,las=1,xlab="no. genes",xlim=c(0,15000))
+mtext("Biotypes of GWAS genes with GO BP annotations")
+grid()
+barplot(mygenes_ingo_bt2,horiz=TRUE,las=1,xlab="no. genes",xlim=c(0,15000))
+grid()
+mtext("Biotypes of GWAS genes with GO BP annotations")
+
+pdf("variant_annotation_barplot2.pdf")
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(mygenes_ingo_bt2,horiz=TRUE,las=1,xlab="no. genes",xlim=c(0,15000))
+grid()
+mtext("Biotypes of GWAS genes with GO BP annotations")
+dev.off()
+
+mygenes_ingo_bt2/sum(mygenes_ingo_bt) *100
+
+```
+
+## Disease GWAS genesets
+
+Make gene sets
+
+```{r,gwas_genesets}
+
+d2g <- gwas[,c("DISEASE.TRAIT","MAPPED_GENE")]
+
+glist <- mclapply(unique(d2g$DISEASE.TRAIT), function(gs) {
+  genes <- d2g[which(d2g$DISEASE.TRAIT == gs),2]
+  genes <- unlist(strsplit(genes,","))
+  genes <- unlist(strsplit(genes," - "))
+  genes <- gsub(" ","",genes)
+} , mc.cores=8 )
+
+names(glist) <- unique(d2g$DISEASE.TRAIT)
+
+# remove those with >5000 or <10 genes
+summary(unlist(lapply(glist,length)))
+glist <- glist[unlist(lapply(glist,length))>=10]
+length(glist)
+summary(unlist(lapply(glist,length)))
+glist <- glist[unlist(lapply(glist,length))<=5000]
+length(glist)
+summary(unlist(lapply(glist,length)))
+
+writeGMT <- function (object, fname ){
+  if (class(object) != "list") stop("object should be of class 'list'")
+  if(file.exists(fname)) unlink(fname)
+  for (iElement in 1:length(object)){
+    write.table(t(c(make.names(rep(names(object)[iElement],2)),object[[iElement]])),
+                sep="\t",quote=FALSE,
+                file=fname,append=TRUE,col.names=FALSE,row.names=FALSE)
+  }
+}
+
+writeGMT(object=glist,fname="gwas_cat.gmt")
+
+```
+
+
+## Session information
+
+```{r,session}
+
+sessionInfo()
+
+```

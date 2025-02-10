@@ -1,0 +1,222 @@
+---
+title: "Ontology coverage"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 5
+    fig_height: 5
+theme: cosmo
+---
+
+Source: https://github.com/markziemann/impute2/
+
+## Introduction
+
+```{r,packages}
+
+suppressPackageStartupMessages({
+  library("tictoc")
+  library("parallel")
+  library("vioplot")
+  library("fgsea")
+
+  library("reshape2")
+  library("eulerr")
+  library("HGNChelper")
+  library("kableExtra")
+  library("beeswarm")
+  library("gplots")
+  library("gridExtra")
+  library("png")
+  library("parallel")
+  library("RhpcBLASctl")
+  library("tictoc")
+  library("vioplot")
+})
+
+```
+
+Read in data:
+
+* Ensembl gene GTF/gene symbols
+
+* Ensembl gene biotypes
+
+* Ontologies
+
+* GWASdb: a database for human genetic variants identified by genome-wide association studies.
+
+```{r,dl_data}
+
+GTF="Homo_sapiens.GRCh38.113.gtf.gz"
+if ( ! file.exists(GTF) ) {
+  download.file("https://ftp.ensembl.org/pub/release-113/gtf/homo_sapiens/Homo_sapiens.GRCh38.113.gtf.gz",
+    destfile=GTF)
+}
+
+```
+
+```{bash,parse}
+
+zcat Homo_sapiens.GRCh38.113.gtf.gz \
+| awk '$3=="gene"' \
+| cut -d '"' -f2,6,8,10 \
+| sed 's/"/\t/g' \
+| sed 's/ensembl_havana\t//' \
+| sed 's/havana//' \
+| sed 's/_tagene//' \
+| sed 's/ensembl//' \
+| sed 's/mirbase//' \
+| sed 's/insdc//' \
+| sed 's/\t\t/\t/' \
+| sed 's/_\t//' > gene_biotype.tsv
+
+```
+
+## Read data.
+
+Gene biotypes.
+
+```{r,read1}
+
+x <- readLines("gene_biotype.tsv")
+x <- strsplit(x,"\t")
+
+# munge
+y <- lapply(x,function(y) {
+  if ( length(y) == 2 ) {
+    OUT=c(y[1],y[1],y[2])
+  } else {
+    OUT=y
+  }
+  return( OUT )
+})
+
+z <- as.data.frame(do.call(rbind,y))
+z$V3 <- gsub("_"," ",z$V3)
+
+```
+
+Genesets.
+
+```{r,genesets,fig.height=7}
+
+gs <- fgsea::gmtPathways("msigdb.v2024.1.Hs.symbols.gmt")
+
+gobp <- gs[grep("^GOBP",names(gs))]
+reac <- gs[grep("^REACTOME",names(gs))]
+
+```
+
+## General gene info
+
+```{r,general1}
+
+message("total genes")
+dim(z)
+
+message("no. named genes")
+length(which(z$V2!=""))
+
+message("no. unnamed genes")
+length(which(z$V2==""))
+
+bt <- sort(table(z$V3))
+
+par(mar=c(4.1, 16.1, 2.1, 2.1) )
+barplot(bt,horiz=TRUE,las=1,cex.names=0.8,xlab="no. genes",main="Ensembl Biotype")
+
+bt
+
+bt/sum(bt)* 100
+
+```
+
+```{r,genesets2}
+
+par(mar=c(4.1, 16.1, 2.1, 2.1) )
+barplot(tail(bt,10),horiz=TRUE,las=1,cex.names=1,xlab="no. genes",main="Ensembl Biotype")
+
+```
+
+## Analyse
+
+```{r,analyse1}
+
+gobp_genes <- unique(unname(unlist(gobp)))
+message("no. genes known to GO")
+length(gobp_genes)
+
+ensg_genes <- unique(apply(z,1,function(x) {
+  if ( x[2]=="" ) {
+    NAME=x[1]
+  } else {
+    NAME=x[2]
+  }
+  return(NAME)
+} ))
+length(ensg_genes)
+
+str(intersect(ensg_genes,gobp_genes))
+
+v1 <- list("Ensembl"=ensg_genes, "GO BP"=gobp_genes)
+
+plot(euler(v1),quantities = TRUE)
+pdf("ontologies_euler.pdf")
+plot(euler(v1),quantities = TRUE)
+dev.off()
+
+message("Ensembl genes in GO BP")
+length(intersect(ensg_genes,gobp_genes))
+itx <- intersect(ensg_genes,gobp_genes)
+itx_bt <- z[which(z$V1 %in% itx | z$V2 %in% itx ),3]
+itx_bt <- sort(table(itx_bt))
+itx_bt/sum(itx_bt) * 100
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(tail(sort(itx_bt),10),horiz=TRUE,las=1,xlab="no. genes",
+  xlim=c(0,18000),main="GO BP Biotype")
+pdf("ontologies_bar1.pdf")
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(tail(sort(itx_bt),10),horiz=TRUE,las=1,xlab="no. genes",
+  xlim=c(0,18000),main="GO BP Biotype")
+grid()
+dev.off()
+
+message("Ensembl genes not in GO BP")
+length(setdiff(ensg_genes,gobp_genes))
+
+
+sdiff <- setdiff(ensg_genes,gobp_genes)
+sdiff_bt <- z[which(z$V1 %in% sdiff | z$V2 %in% sdiff ),3]
+sdiff_bt <- sort(table(sdiff_bt))
+sdiff_bt/sum(sdiff_bt) * 100
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(tail(sort(sdiff_bt),10),horiz=TRUE,las=1,cex.names=1,
+  xlim=c(0,35000),
+  xlab="no. genes",main="Ensembl genes without GO BP Biotype")
+grid()
+pdf("ontologies_bar2.pdf")
+par(mar=c(5.1, 16.1, 4.1, 2.1) )
+barplot(tail(sort(sdiff_bt),10),horiz=TRUE,las=1,cex.names=1,
+  xlim=c(0,35000),
+  xlab="no. genes",main="Ensembl genes without GO BP Biotype")
+grid()
+dev.off()
+
+message("GO BP genes not in Ensembl")
+length(setdiff(gobp_genes,ensg_genes))
+setdiff(gobp_genes,ensg_genes)
+
+par(mar=c(5.1, 4.1, 4.1, 2.1) )
+
+```
+
+## Session information
+
+```{r,session}
+
+sessionInfo()
+
+```

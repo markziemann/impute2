@@ -1,0 +1,543 @@
+---
+title: "Impute assessment"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 7
+    fig_height: 7
+theme: cosmo
+---
+
+Source: https://github.com/markziemann/impute2/
+
+## Introduction
+
+```{r,packages}
+
+suppressPackageStartupMessages({
+  library("tictoc")
+  library("parallel")
+  library("vioplot")
+  library("fgsea")
+
+  library("reshape2")
+  library("eulerr")
+  library("HGNChelper")
+  library("kableExtra")
+  library("beeswarm")
+  library("gplots")
+  library("gridExtra")
+  library("png")
+  library("RhpcBLASctl")
+})
+
+```
+
+## Read data
+
+Genesets=c5.hpo.v2024.1.Hs.symbols.gmt
+
+Impute results:
+
+* high conf: impute_res_hpo.tsv
+
+* low conf: impute_res_hpo_loose.tsv
+
+* low conf 1000: impute_res_hpo_loose1000.tsv
+
+```{r,read}
+
+gs <- gmtPathways("c5.hpo.v2024.1.Hs.symbols.gmt")
+
+hist(table(unlist(gs)))
+
+gcatalog <- unique(unname(unlist(gs)))
+#gcatalog <- names(which(table(unlist(gs))>200)) # well characterised genes
+
+
+# high conf impute_res_hpo_high.tsv
+x <- read.table("impute_res_hpo_high.tsv",header=TRUE)
+x <- x[which(x[,1]!="character(0)_character(0)"),]
+x <- x[grep("_$",x[,1],invert=TRUE),]
+x$symbol <- sapply(strsplit(x[,1],"_"),"[[",2)
+x <- x[which(x$symbol %in% gcatalog),]
+hi <- unique(x[,1:2])
+dim(x)
+
+vres1 <- lapply(1:nrow(x), function(i) {
+  gn <- x[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- x[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres1))
+
+table(unlist(vres1))[2] / nrow(x) * 100 # 4741/48755  8.86 for known genes (3.03 for all genes)
+
+
+# high conf max 1500 impute_res_hpo_high1500.tsv
+x <- read.table("impute_res_hpo_high1500.tsv",header=TRUE)
+x <- x[which(x[,1]!="character(0)_character(0)"),]
+x <- x[grep("_$",x[,1],invert=TRUE),]
+x$symbol <- sapply(strsplit(x[,1],"_"),"[[",2)
+x <- x[which(x$symbol %in% gcatalog),]
+hi <- unique(x[,1:2])
+dim(x)
+
+vres1 <- lapply(1:nrow(x), function(i) {
+  gn <- x[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- x[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres1))
+
+table(unlist(vres1))[2] / nrow(x) * 100 # 321/2130 13.1% for known genes (4.32% for all genes)
+
+# high conf max 1000 impute_res_hpo_high1000.tsv
+x <- read.table("impute_res_hpo_high1000.tsv",header=TRUE)
+x <- x[which(x[,1]!="character(0)_character(0)"),]
+x <- x[grep("_$",x[,1],invert=TRUE),]
+#x$symbol <- sapply(strsplit(x[,1],"_"),"[[",2)
+#x <- x[which(x$symbol %in% gcatalog),]
+hi <- unique(x[,1:2])
+dim(x)
+
+vres1 <- lapply(1:nrow(x), function(i) {
+  gn <- x[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- x[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres1))
+
+table(unlist(vres1))[2] / nrow(x) * 100 # 319/2130 13.0% for known genes (4.34 for all genes)
+
+# high conf max 500 impute_res_hpo_high500.tsv
+x <- read.table("impute_res_hpo_high500.tsv",header=TRUE)
+x <- x[which(x[,1]!="character(0)_character(0)"),]
+x <- x[grep("_$",x[,1],invert=TRUE),]
+x$symbol <- sapply(strsplit(x[,1],"_"),"[[",2)
+x <- x[which(x$symbol %in% gcatalog),]
+hi <- unique(x[,1:2])
+dim(x)
+
+vres1 <- lapply(1:nrow(x), function(i) {
+  gn <- x[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- x[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres1))
+
+table(unlist(vres1))[2] / nrow(x) * 100 # 319/2130 13.0% for known genes (4.34 for all genes)
+
+# high conf max 200 impute_res_hpo_high200.tsv
+x <- read.table("impute_res_hpo_high200.tsv",header=TRUE)
+x <- x[which(x[,1]!="character(0)_character(0)"),]
+x <- x[grep("_$",x[,1],invert=TRUE),]
+x$symbol <- sapply(strsplit(x[,1],"_"),"[[",2)
+x <- x[which(x$symbol %in% gcatalog),]
+hi <- unique(x[,1:2])
+dim(x)
+
+vres1 <- lapply(1:nrow(x), function(i) {
+  gn <- x[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- x[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres1))
+
+table(unlist(vres1))[2] / nrow(x) * 100 # 88/373 19.1% for known genes (5.86 for all genes)
+
+# high conf max 100 impute_res_hpo_high100p05.tsv
+x <- read.table("impute_res_hpo_high100p05.tsv",header=TRUE)
+x <- subset(x,padj<0.01)
+x <- x[which(x[,1]!="character(0)_character(0)"),]
+x <- x[grep("_$",x[,1],invert=TRUE),]
+#x$symbol <- sapply(strsplit(x[,1],"_"),"[[",2)
+#x <- x[which(x$symbol %in% gcatalog),]
+hi <- unique(x[,1:2])
+dim(x)
+
+vres1 <- lapply(1:nrow(x), function(i) {
+  gn <- x[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- x[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres1))
+
+table(unlist(vres1))[2] / nrow(x) * 100 # 51/279 15.45% for known genes (6.04 for all genes)
+
+# low conf 
+y <- read.table("impute_res_hpo_loose.tsv",header=TRUE)
+y <- y[which(y[,1]!="character(0)_character(0)"),]
+y <- y[grep("_$",y[,1],invert=TRUE),]
+y$symbol <- sapply(strsplit(y[,1],"_"),"[[",2)
+y <- y[which(y$symbol %in% gcatalog),]
+lo <- unique(y[,1:2])
+
+vres2 <- lapply(1:nrow(y), function(i) {
+  gn <- y[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- y[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres2))
+
+table(unlist(vres2))[2] / nrow(y) * 100 # 17727/240005 6.87% on known genes (2.16% for all genes)
+
+# low conf 200
+y <- read.table("impute_res_hpo_loose200.tsv",header=TRUE)
+y <- y[which(y[,1]!="character(0)_character(0)"),]
+y <- y[grep("_$",y[,1],invert=TRUE),]
+y$symbol <- sapply(strsplit(y[,1],"_"),"[[",2)
+y <- y[which(y$symbol %in% gcatalog),]
+lo1k <- unique(y[,1:2])
+
+vres2 <- lapply(1:nrow(y), function(i) {
+  gn <- y[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- y[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres2))
+
+table(unlist(vres2))[2] / nrow(y) * 100 # 105/585 15.2% on known genes (4.34% for all genes)
+
+# low conf 500
+y <- read.table("impute_res_hpo_loose500.tsv",header=TRUE)
+y <- y[which(y[,1]!="character(0)_character(0)"),]
+y <- y[grep("_$",y[,1],invert=TRUE),]
+dim(y)
+y$symbol <- sapply(strsplit(y[,1],"_"),"[[",2)
+y <- y[which(y$symbol %in% gcatalog),]
+lo1k <- unique(y[,1:2])
+
+vres2 <- lapply(1:nrow(y), function(i) {
+  gn <- y[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- y[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres2))
+
+table(unlist(vres2))[2] / nrow(y) * 100 # 292/2955 9.0% on known genes (2.87% for all genes)
+
+# low conf 1000
+y <- read.table("impute_res_hpo_loose1000.tsv",header=TRUE)
+y <- y[which(y[,1]!="character(0)_character(0)"),]
+y <- y[grep("_$",y[,1],invert=TRUE),]
+
+y$symbol <- sapply(strsplit(y[,1],"_"),"[[",2)
+y <- y[which(y$symbol %in% gcatalog),]
+
+lo1k <- unique(y[,1:2])
+
+vres2 <- lapply(1:nrow(y), function(i) {
+  gn <- y[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- y[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres2))
+
+table(unlist(vres2))[2] / nrow(y) * 100 #488/5523 8.12% on known genes (2.07% for all genes)
+
+# low conf 1500
+y <- read.table("impute_res_hpo_loose1500.tsv",header=TRUE)
+y <- y[which(y[,1]!="character(0)_character(0)"),]
+y <- y[grep("_$",y[,1],invert=TRUE),]
+
+y$symbol <- sapply(strsplit(y[,1],"_"),"[[",2)
+y <- y[which(y$symbol %in% gcatalog),]
+
+lo1k <- unique(y[,1:2])
+
+vres2 <- lapply(1:nrow(y), function(i) {
+  gn <- y[i,1]
+  symbol <- sapply(strsplit(gn,"_"),"[[",2)
+  setname <- y[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+
+table(unlist(vres2))
+
+table(unlist(vres2))[2] / nrow(y) * 100 #  #522/9327 5.3% on known genes (1.6% for all genes)
+
+
+#impute_res_hpo_high100p05.tsv
+
+
+```
+
+Euler diagram.
+
+```{r,overlaps}
+
+hipred <- paste(hi[,1],hi[,2])
+lopred <- paste(lo[,1],lo[,2])
+
+v1 <- list("high"=hipred, "low"=lopred)
+
+plot(euler(v1),quantities = TRUE)
+
+```
+
+P-value and ES filters.
+
+
+```{r,pfilter}
+
+# high conf
+nrow(x)
+
+pvals <- c(1,1e-5,1e-6,1e-7,1e-8)
+pres <- lapply(pvals,function(p) {
+  xf <- subset(x,pval<p)
+  vres1 <- lapply(1:nrow(xf), function(i) {
+    gn <- xf[i,1]
+    symbol <- sapply(strsplit(gn,"_"),"[[",2)
+    setname <- xf[i,2]
+    setgenes <- gs[[which(names(gs)==setname)]]
+    res <- symbol %in% setgenes
+    return(res)
+  })
+  true=table(unlist(vres1))[2]
+  false=table(unlist(vres1))[1]
+  result=c("true"=true,"false"=false)
+  return(result)
+})
+
+pres
+
+pres <- do.call(rbind,pres)
+rownames(pres) <- pvals
+pres <- as.data.frame(pres)
+pres$pc <- pres[,1] / ( pres[,1] + pres[,2] ) * 100
+pres
+
+
+
+# low conf
+nrow(y)
+
+pvals <- c(1,1e-5,1e-6,1e-7,1e-8)
+pres2 <- lapply(pvals,function(p) {
+  yf <- subset(y,pval<p)
+  vres1 <- lapply(1:nrow(yf), function(i) {
+    gn <- yf[i,1]
+    symbol <- sapply(strsplit(gn,"_"),"[[",2)
+    setname <- yf[i,2]
+    setgenes <- gs[[which(names(gs)==setname)]]
+    res <- symbol %in% setgenes
+    return(res)
+  })
+  true=table(unlist(vres1))[2]
+  false=table(unlist(vres1))[1]
+  result=c("true"=true,"false"=false)
+  return(result)
+})
+
+pres2
+
+pres2 <- do.call(rbind,pres2)
+rownames(pres2) <- pvals
+pres2 <- as.data.frame(pres2)
+pres2$pc <- pres2[,1] / ( pres2[,1] + pres2[,2] ) * 100
+pres2
+
+```
+
+ES filter
+
+```{r,filter}
+
+# high conf
+nrow(x)
+
+ES <- c(2,3,6,9,15,25)
+eres <- lapply(ES,function(es) {
+  xf <- subset(x,FES>=es)
+  vres1 <- lapply(1:nrow(xf), function(i) {
+    gn <- xf[i,1]
+    symbol <- sapply(strsplit(gn,"_"),"[[",2)
+    setname <- xf[i,2]
+    setgenes <- gs[[which(names(gs)==setname)]]
+    res <- symbol %in% setgenes
+    return(res)
+  })
+  true=table(unlist(vres1))[2]
+  false=table(unlist(vres1))[1]
+  result=c("true"=true,"false"=false)
+  return(result)
+})
+
+eres
+
+eres <- do.call(rbind,eres)
+rownames(eres) <- ES
+eres <- as.data.frame(eres)
+eres$pc <- eres[,1] / ( eres[,1] + eres[,2] ) * 100
+eres
+
+
+# low conf
+nrow(y)
+
+ES <- c(2,3,6,9,15,25)
+eres2 <- lapply(ES,function(es) {
+  yf <- subset(y,FES>=es)
+  vres1 <- lapply(1:nrow(yf), function(i) {
+    gn <- yf[i,1]
+    symbol <- sapply(strsplit(gn,"_"),"[[",2)
+    setname <- yf[i,2]
+    setgenes <- gs[[which(names(gs)==setname)]]
+    res <- symbol %in% setgenes
+    return(res)
+  })
+  true=table(unlist(vres1))[2]
+  false=table(unlist(vres1))[1]
+  result=c("true"=true,"false"=false)
+  return(result)
+})
+
+eres2
+
+eres2 <- do.call(rbind,eres2)
+rownames(eres2) <- ES
+eres2 <- as.data.frame(eres2)
+eres2$pc <- eres2[,1] / ( eres2[,1] + eres2[,2] ) * 100
+eres2
+
+```
+
+## FCS analysis
+
+
+```{r,fcs1}
+
+# low conf 1500
+y <- read.table("imputefcs_res.tsv",header=TRUE)
+y <- y[,c(2,1,3:ncol(y))] # swap cols to be consistent
+y <- y[which(y[,1]!="character(0)_character(0)"),]
+y <- y[grep("_$",y[,1],invert=TRUE),]
+
+y$symbol <- sapply(strsplit(y[,1],"_"),"[[",2)
+y <- y[which(y$symbol %in% gcatalog),]
+
+#lo1k <- unique(y[,1:2])
+
+vres2 <- lapply(1:nrow(y), function(i) {
+  symbol <- y[i,"symbol"]
+  setname <- y[i,2]
+  setgenes <- gs[[which(names(gs)==setname)]]
+  res <- symbol %in% setgenes
+  return(res)
+})
+table(unlist(vres2))
+table(unlist(vres2))[2] / nrow(y) * 100 #
+
+
+
+ps <- c(0.01,0.005,0.002,0.001,
+  0.0005, 0.0002, 0.0001,
+  0.00005, 0.00002, 0.00001,
+  0.000005, 0.000002, 0.000001,
+  0.0000005, 0.0000002, 0.0000001)
+
+vres3 <- lapply(ps, function(p) {
+  y2 <- subset(y,fdr<p)
+  vres2 <- lapply(1:nrow(y2), function(i) {
+    symbol <- y2[i,"symbol"]
+    setname <- y2[i,2]
+    setgenes <- gs[[which(names(gs)==setname)]]
+    res <- symbol %in% setgenes
+    return(res)
+  } )
+  table(unlist(vres2))
+} )
+
+vres3 <- do.call(rbind,vres3)
+rownames(vres3) <- ps
+vres3
+
+# now look at means
+library(dplyr)
+y3 <- y
+y3$decile <- ntile(y$mean, 10)
+
+vres4 <- lapply(1:10, function(d) {
+  y4 <- subset(y3,decile==d)
+  vres2 <- lapply(1:nrow(y4), function(i) {
+    symbol <- y4[i,"symbol"]
+    setname <- y4[i,2]
+    setgenes <- gs[[which(names(gs)==setname)]]
+    res <- symbol %in% setgenes
+    return(res)
+  } )
+  table(unlist(vres2))
+} )
+
+vres4 <- do.call(rbind,vres4)
+rownames(vres4) <- 1:10
+vres4
+
+# look at the gene set size
+nmembers <- lapply(1:10, function(d) {
+  y4 <- subset(y3,decile==d)
+  vres2 <- unlist(lapply(1:nrow(y4), function(i) {
+    y4[i,3]
+  } ) )
+} )
+
+vioplot(nmembers)
+unlist(lapply(nmembers,mean))
+
+# look at the mean values
+r <- lapply(1:10, function(d) {
+  y4 <- subset(y3,decile==d)
+  y4 <- y4[order(y4$mean),]
+  y4[c(1,nrow(y4)),4]
+} )
+lapply(r,mean)
+
+```
+
+
