@@ -121,6 +121,8 @@ mybt <- merge(mygenes,z,by.x="gene",by.y="V1",all.x=TRUE)
 
 gwas_bt <- sort(table(mybt$V3))
 
+gwas_bt
+
 par(mar=c(5.1, 16.1, 4.1, 2.1) )
 barplot(gwas_bt,horiz=TRUE,las=1, xlab="no. associations")
 mtext("GWAS Catalog gene annotation")
@@ -129,6 +131,16 @@ OTHER <- sum(gwas_bt[1:(length(gwas_bt)-2)])
 gwas_bt2 <- c("other"=OTHER,gwas_bt[(length(gwas_bt)-1):length(gwas_bt)])
 par(mar=c(5.1, 10.1, 4.1, 2.1) )
 barplot(gwas_bt2/1000,horiz=TRUE,las=1,main="GWAS Catalog gene annotation", xlab="no. associations (thousands)")
+
+gwas_bt2
+
+pdf("variant_biotype_barplot1.pdf")
+par(mar=c(5.1, 10.1, 4.1, 2.1) )
+barplot(gwas_bt2/1000,horiz=TRUE,las=1,main="GWAS Catalog gene annotation", xlab="no. associations (thousands)")
+dev.off()
+
+# number of lncRNA genes with significant associations to traits
+length(unique(mybt[grep("lncRNA",mybt$V3),2]))
 
 ```
 

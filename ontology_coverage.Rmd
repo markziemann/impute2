@@ -213,6 +213,47 @@ par(mar=c(5.1, 4.1, 4.1, 2.1) )
 
 ```
 
+Group genes into biotypes then Euler diagram with GO BP.
+
+```{r,gpbp1}
+
+bt
+head(z)
+
+#remove reduncant ones crudely
+z2 <- z[!duplicated(z$V2),]
+
+
+gobp_genes2 <- intersect(z2$V2,gobp_genes)
+
+pc <- unique(z2[grep("protein coding",z2$V3),2])
+ln <- unique(z2[grep("lncRNA",z2$V3),2])
+ps <- unique(z2[grep("pseudogene",z2$V3),2])
+combo <- unique(c(pc,ln,ps))
+other <- setdiff(unique(z2$V2),combo)
+
+lapply(list(pc,ln,ps,other),length)
+
+#gobp_genes
+
+v1 <- list("GO BP"=gobp_genes2, "protein coding"=pc,
+  "lncRNA"=ln, "pseudogenes"=ps, "other"=other)
+
+plot(euler(v1),quantities = TRUE)
+
+other2 <- c(ps,other)
+
+v1 <- list("GO BP"=gobp_genes2, "protein coding"=pc,
+  "lncRNA"=ln, "other"=other2)
+
+plot(euler(v1),quantities = TRUE)
+
+pdf("ontologies_euler2.pdf")
+plot(euler(v1),quantities = TRUE)
+dev.off()
+
+```
+
 ## Session information
 
 ```{r,session}
