@@ -1,0 +1,189 @@
+---
+title: "GBA imputation part 2"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 7
+    fig_height: 7
+theme: cosmo
+---
+
+Source: https://github.com/markziemann/impute2/
+
+## Introduction
+
+IDEA:
+
+* Collect the correlation coefficients of genes in a set (called GS).
+
+* Use the background distribution for comparison.
+
+* For each gene not in the set, ask whether the correlation to genes in the set is similar to genes in the set or it looks different.
+
+* Get a probability that the gene is part of the set or not.
+
+
+## Libraries
+
+```{r,packages}
+
+suppressPackageStartupMessages({
+  library("tictoc")
+  library("parallel")
+  library("vioplot")
+  library("fgsea")
+
+  library("reshape2")
+  library("eulerr")
+  library("HGNChelper")
+  library("kableExtra")
+  library("beeswarm")
+  library("gplots")
+  library("gridExtra")
+  library("png")
+  library("parallel")
+  library("RhpcBLASctl")
+  library("tictoc")
+  library("vioplot")
+})
+
+# geometric mean https://stackoverflow.com/questions/2602583/geometric-mean-is-there-a-built-in
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+
+```
+
+## Load gmt
+
+Selecting three cell cycle GO BPs with different sizes (small, medium and large).
+
+
+```{r,gmt1}
+
+go <- gmtPathways("c5.go.v2024.1.Hs.symbols.gmt")
+
+gs <- go[grep("CELL_CYCLE",names(go))][1:3]
+
+lapply(gs,length)
+
+```
+
+## Get the gene symbol - ENSG ID relationships
+
+
+```{r,ensg1}
+
+ensg <- read.table("ensg.tsv",header=TRUE)
+
+```
+
+## Index the location of genes in the cordata
+
+GX2 is an object with gene ID, file number and column number.
+This will allow us to extract those columns and start analysing the correlation
+coefficients.
+
+```{r,cordata1}
+
+cdatlist <- list.files(".",pattern="^cordata")
+gx1 <- lapply(cdatlist, function(f) {
+  h1 <- readLines(f,n=1)
+  h1 <- unlist(strsplit(h1,'\t'))
+  return(h1)
+} )
+
+names(gx1) <- 1:length(gx1)
+gx2 <- stack(gx1)
+
+gx3 <- lapply(gx1, function(f) { 1:length(f) } )
+
+names(gx3) <- 1:length(gx1)
+
+gx4 <- stack(gx3)
+
+gx2$pos <- gx4$values
+
+head(gx2)
+
+```
+
+## Index the row names
+
+```{r,rownames1}
+
+rw <- read.table("rownames.txt",header=FALSE)$V1
+head(rw)
+
+```
+
+## Get the genes and pearson correlation coefficients
+
+Need to select specific columns.
+
+```{r,extract1}
+
+i=1
+mygs <- gs[i]
+gsname <- names(mygs)
+gs_genes <- unname(unlist(mygs))
+gs_ensg <- ensg[match(gs_genes,ensg$hgnc_symbol),1]
+gx2$values <- gsub("[^[:alnum:] ]", "", gx2$values)
+gs_gx <- gx2[gx2$values %in% gs_ensg,]
+
+dfl <- lapply(unique(gs_gx$ind), function (f) {
+  mypos <- gs_gx[gs_gx$ind == f,3]
+  mypos2 <- paste(mypos,collapse=",")
+  COMMAND <- paste("cut -f",mypos2, cdatlist[f],"> tmp")
+  cx <- read.table("tmp",header=TRUE)
+  return(cx)
+})
+cmx <- do.call(cbind,dfl)
+
+pcin <- cmx[which(rw %in% gs_ensg),]
+pcin <- as.numeric(unname(unlist(as.vector(pcin))))
+pcin <- pcin[which(pcin!=1)]
+
+pcout <- cmx[which(! rw %in% gs_ensg),]
+pcout <- as.numeric(unname(unlist(as.vector(pcout))))
+pcout <- pcout[which(pcout!=1)]
+
+pl <- list("out"=pcout,"in"=pcin)
+vioplot(pl,main=gsname,ylab="Pearson correlation coefficient")
+
+mid_in <- mean(c(mean(pcin),median(pcin)))
+mid_out <- mean(c(mean(pcout),median(pcout)))
+
+# now test each other gene
+i=1
+gm <- unlist(lapply(1:nrow(cmx), function(i) {
+  gpc <- as.numeric(unname(unlist((cmx[i,,drop=TRUE]))))
+  gpc <- gpc[which(gpc!=1)]
+  mid <- mean(c(mean(gpc),median(gpc)))
+  return(mid)
+}))
+names(gm) <- rw
+candidates <- tail(sort(gm),length(gs_ensg))
+candidates <- candidates[which(candidates > mid_in)]
+
+hist(gm,xlab="mid Pearson correlation values")
+abline(v=c(mid_in,mid_out),col=c("red","blue"),lty=2,lwd=2)
+
+ensg[match(names(candidates),ensg$ensembl_gene_id),]
+
+candidate_symbols <- ensg[match(names(candidates),ensg$ensembl_gene_id),2]
+
+```
+
+
+## Session information
+
+For reproducibility.
+
+```{r,session}
+
+sessionInfo()
+
+```
