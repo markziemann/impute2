@@ -54,6 +54,18 @@ gm_mean = function(x, na.rm=TRUE){
   exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
 }
 
+gmt_import <- function(gmtfile) {
+    genesetLines <- strsplit(readLines(gmtfile), "\t")
+    genesets <- lapply(genesetLines, utils::tail, -2)
+    names(genesets) <- unlist(lapply(genesetLines, head, 1))
+    attributes(genesets)$originfile <- gmtfile
+    genesets <- genesets[lapply(genesets,length)>0]
+    if( any(duplicated(names(genesets))) ) {
+        warning("Duplicated gene sets names detected")
+    }
+    genesets
+}
+
 ```
 
 ## Load gmt
@@ -63,11 +75,20 @@ Selecting three cell cycle GO BPs with different sizes (small, medium and large)
 
 ```{r,gmt1}
 
-go <- gmtPathways("c5.go.v2024.1.Hs.symbols.gmt")
+#go <- gmtPathways("c5.go.v2024.1.Hs.symbols.gmt")
+go <- gmt_import("c5.go.v2024.1.Hs.symbols.gmt")
 
-gs <- go[grep("CELL_CYCLE",names(go))][1:3]
+summary(unlist(lapply(go,length)))
+table(unlist(lapply(go,length))>500)
 
-lapply(gs,length)
+gs <- go[which(unlist(lapply(go,length))<=500)]
+
+#gs <- go[grep("CELL_CYCLE",names(go))][1:3]
+
+head(lapply(gs,length))
+summary(unlist(lapply(gs,length)))
+
+
 
 ```
 
@@ -123,12 +144,29 @@ head(rw)
 
 Need to select specific columns.
 
+This seems to work pretty well for small gene sets by finding genes that have high correlation coefficients
+to genes already in the set.
+
+It looks at the relationship of an unknown gene to all the genes in the set.
+This may work for smaller sets, but for larger pathways it might be unreasonable
+to expect a gene to have high correlation with 100+ members of that set.
+
+This might work better if we set a threshold such as selecting the coefficients of
+unknown gene with the top 10 best genes already in the set.
+Instead of a hard cut-off, a weighting could be better.
+For example if there are 100 genes in the set, then
+
+
+
 ```{r,extract1}
 
+#gs <- head(gs,100)
+
+tic()
 results <- lapply(1:length(gs), function(i) {
   mygs <- gs[i]
   gsname <- names(mygs)
-  message(gsname)
+  message(paste("No.",i,"of 10086:",gsname))
   gs_genes <- unname(unlist(mygs))
   gs_ensg <- ensg[match(gs_genes,ensg$hgnc_symbol),1]
   gx2$values <- gsub("[^[:alnum:] ]", "", gx2$values)
@@ -138,7 +176,7 @@ results <- lapply(1:length(gs), function(i) {
     mypos <- gs_gx[gs_gx$ind == f,3]
     mypos2 <- paste(mypos,collapse=",")
     TMPFILE=paste("tmp.",letters[f],sep="")
-    COMMAND <- paste("cut -f",mypos2, cdatlist[f],">",TMPFILE)
+    COMMAND <- paste("zcat", cdatlist[f], "| cut -f",mypos2,">",TMPFILE)
     system(COMMAND)
     cx <- read.table(TMPFILE,header=TRUE)
     return(cx)
@@ -162,7 +200,6 @@ results <- lapply(1:length(gs), function(i) {
   }, mc.cores=24))
   message("tidy output")
   names(gm) <- rw
-  sort(gm)
   candidates <- tail(sort(gm),length(gs_ensg))
   candidates <- candidates[which(candidates > mid_in)]
   candidate_symbols <- ensg[match(names(candidates),ensg$ensembl_gene_id),2]
@@ -171,9 +208,9 @@ results <- lapply(1:length(gs), function(i) {
   res <- res[,c("ensID","geneSymbol","setName","cand_r","in_r","out_r")]
   return(res)
 })
-
-head(res)
-dim(res)
+toc()
+head(results)
+length(results)
 
 ```
 
