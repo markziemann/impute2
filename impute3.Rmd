@@ -171,6 +171,7 @@ results <- lapply(1:length(gs), function(i) {
   gs_ensg <- ensg[match(gs_genes,ensg$hgnc_symbol),1]
   gx2$values <- gsub("[^[:alnum:] ]", "", gx2$values)
   gs_gx <- gx2[gx2$values %in% gs_ensg,]
+  if ( nrow(gs_gx) < 5 ) { return(NULL) }
   message("extracting columns")
   dfl <- mclapply(unique(gs_gx$ind), function (f) {
     mypos <- gs_gx[gs_gx$ind == f,3]
@@ -200,7 +201,7 @@ results <- lapply(1:length(gs), function(i) {
   }, mc.cores=24))
   message("tidy output")
   names(gm) <- rw
-  candidates <- tail(sort(gm),length(gs_ensg))
+  candidates <- tail(sort(gm),(length(gs_ensg)*2))
   candidates <- candidates[which(candidates > mid_in)]
   candidate_symbols <- ensg[match(names(candidates),ensg$ensembl_gene_id),2]
   res <- data.frame(names(candidates), unname(candidates),candidate_symbols,mid_out,mid_in,gsname)
