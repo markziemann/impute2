@@ -215,6 +215,31 @@ length(results)
 
 ```
 
+## Investigate weighting
+
+As some gene sets are large and it would be unreasonable to expect a gene to correlate with all genes in the set,
+we can potentially investigate weighting, which would emphasise tight co-regulation with the top X partners.
+
+Here are three approaches for comparison.
+
+1. First, unweighted; all values count equally.
+
+2. Linear, higher values are boosted at a linear degree.
+
+3. Square parabola, the linear weighting factor is squared.
+
+| Sorted value | Unweighted | Linear | square | Sq Parabola |
+| --- | --- | --- | --- | --- |
+| 1 | 1 | 1.9 | 3.61 | 2.71 |
+| 2 | 1 | 1.7 | 2.89 | 2.17 |
+| 3 | 1 | 1.5 | 2.25 | 1.69 |
+| 4 | 1 | 1.3 | 1.69 | 1.27 |
+| 5 | 1 | 1.1 | 1.21 | 0.91 |
+| 6 | 1 | 0.9 | 0.81 | 0.61 |
+| 7 | 1 | 0.7 | 0.49 | 0.19 |
+| 8 | 1 | 0.5 | 0.25 | 0.07 |
+| 9 | 1 | 0.3 | 0.09 | 0.07 |
+| 10 | 1 | 0.1 | 0.01 | 0.01 |
 
 ## Session information
 
