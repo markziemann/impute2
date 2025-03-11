@@ -88,7 +88,11 @@ gs <- go[which(unlist(lapply(go,length))<=500)]
 head(lapply(gs,length))
 summary(unlist(lapply(gs,length)))
 
+hpo <- gmt_import("c5.hpo.v2024.1.Hs.symbols.gmt")
 
+summary(unlist(lapply(hpo,length)))
+table(unlist(lapply(hpo,length))>500)
+gs <- hpo[which(unlist(lapply(hpo,length))<=500)]
 
 ```
 
@@ -161,54 +165,63 @@ For example if there are 100 genes in the set, then
 ```{r,extract1}
 
 #gs <- head(gs,100)
+set.seed(42) ; gs2 <- gs[sample(x=1:length(gs),size=1000)]
+
+
+impute3 <- function(gs) {
+  results <- lapply(1:length(gs), function(i) {
+    mygs <- gs[i]
+    gsname <- names(mygs)
+    MYLEN=length(gs)
+    message(paste("No.",i,"of",MYLEN,":",gsname))
+    gs_genes <- unname(unlist(mygs))
+    gs_ensg <- ensg[match(gs_genes,ensg$hgnc_symbol),1]
+    gx2$values <- gsub("[^[:alnum:] ]", "", gx2$values)
+    gs_gx <- gx2[gx2$values %in% gs_ensg,]
+    if ( nrow(gs_gx) < 5 ) { return(NULL) }
+    message("extracting columns")
+    dfl <- mclapply(unique(gs_gx$ind), function (f) {
+      mypos <- gs_gx[gs_gx$ind == f,3]
+      mypos2 <- paste(mypos,collapse=",")
+      TMPFILE=paste("tmp.",letters[f],sep="")
+      COMMAND <- paste("zcat", cdatlist[f], "| cut -f",mypos2,">",TMPFILE)
+      system(COMMAND)
+      cx <- read.table(TMPFILE,header=TRUE)
+      return(cx)
+    },mc.cores=16)
+    message("Tidy output")
+    cmx <- do.call(cbind,dfl)
+    pcin <- cmx[which(rw %in% gs_ensg),]
+    pcin <- as.numeric(unname(unlist(as.vector(pcin))))
+    pcin <- pcin[which(pcin!=1)]
+    pcout <- cmx[which(! rw %in% gs_ensg),]
+    pcout <- as.numeric(unname(unlist(as.vector(pcout))))
+    pcout <- pcout[which(pcout!=1)]
+    mid_in <- mean(c(mean(pcin),median(pcin)))
+    mid_out <- mean(c(mean(pcout),median(pcout)))
+    message("now test each gene for membership") #need more ram for big gene sets
+    gm <- unlist(mclapply(1:nrow(cmx), function(i) {
+      gpc <- as.numeric(unname(unlist((cmx[i,,drop=TRUE]))))
+      gpc <- gpc[which(gpc!=1)]
+      mid <- mean(c(mean(gpc),median(gpc)))
+      return(mid)
+    }, mc.cores=24))
+    message("tidy output")
+    names(gm) <- rw
+    candidates <- tail(sort(gm),(length(gs_ensg)*2))
+    candidates <- candidates[which(candidates > mid_in)]
+    candidate_symbols <- ensg[match(names(candidates),ensg$ensembl_gene_id),2]
+    res <- data.frame(names(candidates), unname(candidates),candidate_symbols,mid_out,mid_in,gsname)
+    colnames(res) <- c("ensID","cand_r","geneSymbol","out_r","in_r","setName")
+    res <- res[,c("ensID","geneSymbol","setName","cand_r","in_r","out_r")]
+    return(res)
+  })
+  names(results) <- names(gs)
+  return(results)
+}
 
 tic()
-results <- lapply(1:length(gs), function(i) {
-  mygs <- gs[i]
-  gsname <- names(mygs)
-  message(paste("No.",i,"of 10086:",gsname))
-  gs_genes <- unname(unlist(mygs))
-  gs_ensg <- ensg[match(gs_genes,ensg$hgnc_symbol),1]
-  gx2$values <- gsub("[^[:alnum:] ]", "", gx2$values)
-  gs_gx <- gx2[gx2$values %in% gs_ensg,]
-  if ( nrow(gs_gx) < 5 ) { return(NULL) }
-  message("extracting columns")
-  dfl <- mclapply(unique(gs_gx$ind), function (f) {
-    mypos <- gs_gx[gs_gx$ind == f,3]
-    mypos2 <- paste(mypos,collapse=",")
-    TMPFILE=paste("tmp.",letters[f],sep="")
-    COMMAND <- paste("zcat", cdatlist[f], "| cut -f",mypos2,">",TMPFILE)
-    system(COMMAND)
-    cx <- read.table(TMPFILE,header=TRUE)
-    return(cx)
-  },mc.cores=16)
-  message("Tidy output")
-  cmx <- do.call(cbind,dfl)
-  pcin <- cmx[which(rw %in% gs_ensg),]
-  pcin <- as.numeric(unname(unlist(as.vector(pcin))))
-  pcin <- pcin[which(pcin!=1)]
-  pcout <- cmx[which(! rw %in% gs_ensg),]
-  pcout <- as.numeric(unname(unlist(as.vector(pcout))))
-  pcout <- pcout[which(pcout!=1)]
-  mid_in <- mean(c(mean(pcin),median(pcin)))
-  mid_out <- mean(c(mean(pcout),median(pcout)))
-  message("now test each gene for membership") #need more ram for big gene sets
-  gm <- unlist(mclapply(1:nrow(cmx), function(i) {
-    gpc <- as.numeric(unname(unlist((cmx[i,,drop=TRUE]))))
-    gpc <- gpc[which(gpc!=1)]
-    mid <- mean(c(mean(gpc),median(gpc)))
-    return(mid)
-  }, mc.cores=24))
-  message("tidy output")
-  names(gm) <- rw
-  candidates <- tail(sort(gm),(length(gs_ensg)*2))
-  candidates <- candidates[which(candidates > mid_in)]
-  candidate_symbols <- ensg[match(names(candidates),ensg$ensembl_gene_id),2]
-  res <- data.frame(names(candidates), unname(candidates),candidate_symbols,mid_out,mid_in,gsname)
-  colnames(res) <- c("ensID","cand_r","geneSymbol","out_r","in_r","setName")
-  res <- res[,c("ensID","geneSymbol","setName","cand_r","in_r","out_r")]
-  return(res)
-})
+results <- impute3(gs2)
 toc()
 head(results)
 length(results)
